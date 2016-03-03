@@ -8,7 +8,20 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
+#define TOTAL_REQUESTS_SLOT	    0
+#define UNCACHED_REQUESTS_SLOT	    1
+#define NGX_HTTP_CACHE_MISS_SLOT    2
+#define NGX_HTTP_CACHE_BYPASS	    3
+#define NGX_HTTP_CACHE_EXPIRED	    4
+#define NGX_HTTP_CACHE_STALE	    5
+#define NGX_HTTP_CACHE_UPDATING	    6
+#define NGX_HTTP_CACHE_REVALIDATED  7
+#define NGX_HTTP_CACHE_HIT	    8
+#define MISC_SLOT		    9
+
 static ngx_atomic_uint_t cache_status[] = {
+    0, //TOTAL_REQUESTS_SLOT
+    0, //UNCACHED_REQUESTS_SLOT
     0, //NGX_HTTP_CACHE_MISS,
     0, //NGX_HTTP_CACHE_BYPASS
     0, //NGX_HTTP_CACHE_EXPIRED
@@ -16,7 +29,7 @@ static ngx_atomic_uint_t cache_status[] = {
     0, //NGX_HTTP_CACHE_UPDATING
     0, //NGX_HTTP_CACHE_REVALIDATED
     0, //NGX_HTTP_CACHE_HIT
-    0  //NGX_HTTP_CACHE_SCARCE
+    0  //MISC_SLOT
 };
 
 static ngx_http_output_header_filter_pt  ngx_original_filter_ptr;
@@ -55,8 +68,8 @@ static ngx_http_module_t  ngx_cache_status_module_ctx = {
 
 ngx_module_t  ngx_cache_status_module = {
     NGX_MODULE_V1,
-    &ngx_cache_status_module_ctx,      /* module context */
-    ngx_status_commands,              /* module directives */
+    &ngx_cache_status_module_ctx,          /* module context */
+    ngx_status_commands,                   /* module directives */
     NGX_HTTP_MODULE,                       /* module type */
     NULL,                                  /* init master */
     NULL,                                  /* init module */
@@ -70,10 +83,10 @@ ngx_module_t  ngx_cache_status_module = {
 
 static ngx_int_t ngx_status_handler(ngx_http_request_t *r)
 {
-    size_t             size;
-    ngx_int_t          rc;
-    ngx_buf_t         *b;
-    ngx_chain_t        out;
+    size_t       size;
+    ngx_int_t    rc;
+    ngx_buf_t    *b;
+    ngx_chain_t  out;
 
     if (r->method != NGX_HTTP_GET && r->method != NGX_HTTP_HEAD) {
         return NGX_HTTP_NOT_ALLOWED;
@@ -100,6 +113,8 @@ static ngx_int_t ngx_status_handler(ngx_http_request_t *r)
     }
    
     size = sizeof("Cache statistics:\n")
+	    + sizeof("Requests: \n")	+ NGX_ATOMIC_T_LEN
+	    + sizeof("Uncached: \n")    + NGX_ATOMIC_T_LEN
 	    + sizeof("Miss: \n")	+ NGX_ATOMIC_T_LEN
 	    + sizeof("Bypass: \n")	+ NGX_ATOMIC_T_LEN
 	    + sizeof("Expired: \n")	+ NGX_ATOMIC_T_LEN
@@ -107,7 +122,7 @@ static ngx_int_t ngx_status_handler(ngx_http_request_t *r)
 	    + sizeof("Updating: \n")	+ NGX_ATOMIC_T_LEN
 	    + sizeof("Revalidated: \n") + NGX_ATOMIC_T_LEN
 	    + sizeof("Hit: \n")		+ NGX_ATOMIC_T_LEN
-	    + sizeof("Scarce: ")	+ NGX_ATOMIC_T_LEN;
+	    + sizeof("Misc: ")		+ NGX_ATOMIC_T_LEN;
 
     b = ngx_create_temp_buf(r->pool, size);
     if (b == NULL) {
@@ -117,15 +132,18 @@ static ngx_int_t ngx_status_handler(ngx_http_request_t *r)
     out.buf = b;
     out.next = NULL;
     
-    b->last = ngx_cpymem(b->last, "Cache statistics:\n", sizeof("Cache statistics:\n") - 1);
-    b->last = ngx_sprintf(b->last, "Miss: %uA\n",	    cache_status[0]);
-    b->last = ngx_sprintf(b->last, "Bypass: %uA\n",	    cache_status[1]);
-    b->last = ngx_sprintf(b->last, "Expired: %uA\n",	    cache_status[2]);
-    b->last = ngx_sprintf(b->last, "Stale: %uA\n",	    cache_status[3]);
-    b->last = ngx_sprintf(b->last, "Updating: %uA\n",	    cache_status[4]);
-    b->last = ngx_sprintf(b->last, "Revalidated: %uA\n",    cache_status[5]);
-    b->last = ngx_sprintf(b->last, "Hit: %uA\n",	    cache_status[6]);
-    b->last = ngx_sprintf(b->last, "Scarce: %uA",	    cache_status[7]);
+    b->last = ngx_cpymem(b->last, "Cache statistics:\n", 
+				  sizeof("Cache statistics:\n") - 1);
+    b->last = ngx_sprintf(b->last, "Requests: %uA\n",       cache_status[0]);
+    b->last = ngx_sprintf(b->last, "Uncached: %uA\n",       cache_status[1]);
+    b->last = ngx_sprintf(b->last, "Miss: %uA\n",	    cache_status[2]);
+    b->last = ngx_sprintf(b->last, "Bypass: %uA\n",	    cache_status[3]);
+    b->last = ngx_sprintf(b->last, "Expired: %uA\n",	    cache_status[4]);
+    b->last = ngx_sprintf(b->last, "Stale: %uA\n",	    cache_status[5]);
+    b->last = ngx_sprintf(b->last, "Updating: %uA\n",	    cache_status[6]);
+    b->last = ngx_sprintf(b->last, "Revalidated: %uA\n",    cache_status[7]);
+    b->last = ngx_sprintf(b->last, "Hit: %uA\n",	    cache_status[8]);
+    b->last = ngx_sprintf(b->last, "Misc: %uA",		    cache_status[9]);
 
     r->headers_out.status = NGX_HTTP_OK;
     r->headers_out.content_length_n = b->last - b->pos;
@@ -162,12 +180,20 @@ static ngx_int_t ngx_cache_status_filter_init(ngx_conf_t *cf)
 
 static ngx_int_t ngx_cache_status_filter(ngx_http_request_t *r) 
 {
+    cache_status[TOTAL_REQUESTS_SLOT]++;
 #if (NGX_HTTP_CACHE)
     if (r->upstream == NULL || r->upstream->cache_status == 0) {
+	cache_status[UNCACHED_REQUESTS_SLOT]++;
         return ngx_original_filter_ptr(r);
     }
     
-    cache_status[r->upstream->cache_status-1]++;
+    if (r->upstream->cache_status > 7) { //greater than NGX_HTTP_CACHE_HIT
+        cache_status[MISC_SLOT]++;
+    } else {
+        cache_status[r->upstream->cache_status+1]++;
+    }
+#else
+    cache_status[UNCACHED_REQUESTS_SLOT]++;
 #endif
     
     return ngx_original_filter_ptr(r);
