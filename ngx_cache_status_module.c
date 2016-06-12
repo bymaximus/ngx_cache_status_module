@@ -8,16 +8,36 @@
 #include <ngx_core.h>
 #include <ngx_http.h>
 
-#define TOTAL_REQUESTS_SLOT	    0
-#define UNCACHED_REQUESTS_SLOT	    1
-#define NGX_HTTP_CACHE_MISS_SLOT    2
-#define NGX_HTTP_CACHE_BYPASS	    3
-#define NGX_HTTP_CACHE_EXPIRED	    4
-#define NGX_HTTP_CACHE_STALE	    5
-#define NGX_HTTP_CACHE_UPDATING	    6
-#define NGX_HTTP_CACHE_REVALIDATED  7
-#define NGX_HTTP_CACHE_HIT	    8
-#define MISC_SLOT		    9
+#if !defined TOTAL_REQUESTS_SLOT
+        #define TOTAL_REQUESTS_SLOT         0
+#endif
+#if !defined UNCACHED_REQUESTS_SLOT
+        #define UNCACHED_REQUESTS_SLOT      1
+#endif
+#if !defined NGX_HTTP_CACHE_MISS_SLOT
+        #define NGX_HTTP_CACHE_MISS_SLOT    2
+#endif
+#if !defined NGX_HTTP_CACHE_BYPASS
+        #define NGX_HTTP_CACHE_BYPASS       3
+#endif
+#if !defined NGX_HTTP_CACHE_EXPIRED
+        #define NGX_HTTP_CACHE_EXPIRED      4
+#endif
+#if !defined NGX_HTTP_CACHE_STALE
+        #define NGX_HTTP_CACHE_STALE        5
+#endif
+#if !defined NGX_HTTP_CACHE_UPDATING
+        #define NGX_HTTP_CACHE_UPDATING     6
+#endif
+#if !defined NGX_HTTP_CACHE_REVALIDATED
+        #define NGX_HTTP_CACHE_REVALIDATED  7
+#endif
+#if !defined NGX_HTTP_CACHE_HIT
+        #define NGX_HTTP_CACHE_HIT          8
+#endif
+#if !defined MISC_SLOT
+        #define MISC_SLOT                   9
+#endif
 
 static ngx_atomic_uint_t cache_status[] = {
     0, //TOTAL_REQUESTS_SLOT
